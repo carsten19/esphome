@@ -32,6 +32,7 @@ from esphome.const import (
     CONF_ENCRYPTION,
     CONF_EVENT,
     CONF_ID,
+    CONF_KEEPALIVE,
     CONF_KEY,
     CONF_MAX_CONNECTIONS,
     CONF_ON_CLIENT_CONNECTED,
@@ -144,7 +145,6 @@ CONF_HOMEASSISTANT_STATES = "homeassistant_states"
 CONF_LISTEN_BACKLOG = "listen_backlog"
 CONF_MAX_SEND_QUEUE = "max_send_queue"
 CONF_OUTGOING_CONNECTION = "outgoing_connection"
-CONF_KEEPALIVE = "keepalive"
 DEFAULT_KEEPALIVE = "60s"
 CONF_STATE_SUBSCRIPTION_ONLY = "state_subscription_only"
 
@@ -400,9 +400,7 @@ CONFIG_SCHEMA = cv.All(
             # Raise it for sleepy devices, e.g. a Thread MTD with a long poll_period.
             cv.Optional(CONF_KEEPALIVE, default=DEFAULT_KEEPALIVE): cv.All(
                 cv.positive_time_period_milliseconds,
-                cv.Range(
-                    min=cv.TimePeriod(seconds=10), max=cv.TimePeriod(hours=1)
-                ),
+                cv.Range(min=cv.TimePeriod(seconds=10), max=cv.TimePeriod(hours=1)),
             ),
             cv.Optional(CONF_BATCH_DELAY, default=DEFAULT_BATCH_DELAY): cv.All(
                 cv.positive_time_period_milliseconds,
@@ -596,12 +594,11 @@ async def to_code(config: ConfigType) -> None:
         cg.add(var.set_listen_backlog(listen_backlog))
     cg.add_define("MAX_API_CONNECTIONS", config[CONF_MAX_CONNECTIONS])
     cg.add_define("API_MAX_SEND_QUEUE", config[CONF_MAX_SEND_QUEUE])
-    if (keepalive := config[CONF_KEEPALIVE]) != cv.time_period(DEFAULT_KEEPALIVE):
-        # Whole seconds: the interval is advertised to clients in seconds
-        cg.add_define(
-            "API_KEEPALIVE_TIMEOUT_MS",
-            (keepalive.total_milliseconds // 1000) * 1000,
-        )
+    # Whole seconds: the interval is advertised to clients in seconds
+    keepalive_ms = (config[CONF_KEEPALIVE].total_milliseconds // 1000) * 1000
+    if keepalive_ms != cv.time_period(DEFAULT_KEEPALIVE).total_milliseconds:
+        cg.add_define("USE_API_KEEPALIVE_INTERVAL")
+        cg.add_define("API_KEEPALIVE_TIMEOUT_MS", keepalive_ms)
 
     actions = config.get(CONF_ACTIONS, [])
     has_user_actions = bool(actions) or config[CONF_CUSTOM_SERVICES]
